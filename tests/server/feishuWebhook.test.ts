@@ -10,11 +10,11 @@ import { type LarkCliRunner } from "../../src/tools/larkCli";
 function sign(input: {
   timestamp: string;
   nonce: string;
-  verificationToken: string;
+  encryptKey: string;
   body: string;
 }) {
   return createHash("sha256")
-    .update(input.timestamp + input.nonce + input.verificationToken + input.body)
+    .update(input.timestamp + input.nonce + input.encryptKey + input.body)
     .digest("hex");
 }
 
@@ -30,6 +30,7 @@ function createApp(
     config: loadConfig({
       sqlitePath: ":memory:",
       larkVerificationToken: null,
+      larkEncryptKey: null,
       ...configOverrides
     }),
     repos,
@@ -42,7 +43,7 @@ function createApp(
 
 describe("POST /webhooks/feishu/event", () => {
   it("returns the Feishu challenge value", async () => {
-    const { app } = createApp();
+    const { app } = createApp({ larkEncryptKey: null });
 
     const response = await app.inject({
       method: "POST",
@@ -55,7 +56,7 @@ describe("POST /webhooks/feishu/event", () => {
   });
 
   it("returns the Feishu challenge value before missing-token checks in production", async () => {
-    const { app } = createApp({ nodeEnv: "production", larkVerificationToken: null });
+    const { app } = createApp({ nodeEnv: "production", larkVerificationToken: null, larkEncryptKey: "encrypt-key" });
 
     const response = await app.inject({
       method: "POST",
@@ -68,7 +69,7 @@ describe("POST /webhooks/feishu/event", () => {
   });
 
   it("returns the Feishu challenge value before signature verification", async () => {
-    const { app } = createApp({ larkVerificationToken: "verification-token" });
+    const { app } = createApp({ larkVerificationToken: "verification-token", larkEncryptKey: "encrypt-key" });
 
     const response = await app.inject({
       method: "POST",
@@ -81,7 +82,7 @@ describe("POST /webhooks/feishu/event", () => {
   });
 
   it("keeps ordinary events fail-closed without a verification token in production", async () => {
-    const { app } = createApp({ nodeEnv: "production", larkVerificationToken: null });
+    const { app } = createApp({ nodeEnv: "production", larkVerificationToken: null, larkEncryptKey: "encrypt-key" });
 
     const response = await app.inject({
       method: "POST",
@@ -94,7 +95,7 @@ describe("POST /webhooks/feishu/event", () => {
   });
 
   it("accepts unrecognized events", async () => {
-    const { app } = createApp();
+    const { app } = createApp({ larkEncryptKey: null });
 
     const response = await app.inject({
       method: "POST",
@@ -107,7 +108,7 @@ describe("POST /webhooks/feishu/event", () => {
   });
 
   it("rejects invalid signatures when a verification token is configured", async () => {
-    const { app } = createApp({ larkVerificationToken: "verification-token" });
+    const { app } = createApp({ larkVerificationToken: "verification-token", larkEncryptKey: "encrypt-key" });
 
     const response = await app.inject({
       method: "POST",
@@ -145,10 +146,10 @@ describe("POST /webhooks/feishu/event", () => {
     const signatureInput = {
       timestamp: "1234567890",
       nonce: "nonce-test",
-      verificationToken: "verification-token",
+      encryptKey: "encrypt-key",
       body
     };
-    const { app, repos } = createApp({ larkVerificationToken: "verification-token" });
+    const { app, repos } = createApp({ larkVerificationToken: "verification-token", larkEncryptKey: "encrypt-key" });
 
     const response = await app.inject({
       method: "POST",
@@ -196,7 +197,7 @@ describe("POST /webhooks/feishu/event", () => {
     const signatureInput = {
       timestamp: "1234567890",
       nonce: "nonce-test",
-      verificationToken: "verification-token",
+      encryptKey: "encrypt-key",
       body
     };
     const sentCardArgs: string[][] = [];
@@ -214,6 +215,7 @@ describe("POST /webhooks/feishu/event", () => {
     const { app, repos } = createApp(
       {
         feishuDryRun: true,
+        larkEncryptKey: "encrypt-key",
         feishuCardSendDryRun: false,
         feishuCardActionsEnabled: true,
         larkVerificationToken: "verification-token",
@@ -268,7 +270,7 @@ describe("POST /webhooks/feishu/event", () => {
     const signatureInput = {
       timestamp: "1234567890",
       nonce: "nonce-test",
-      verificationToken: "verification-token",
+      encryptKey: "encrypt-key",
       body
     };
     const runner: LarkCliRunner = async (_bin, args) => {
@@ -288,6 +290,7 @@ describe("POST /webhooks/feishu/event", () => {
     const { app, repos } = createApp(
       {
         feishuDryRun: true,
+        larkEncryptKey: "encrypt-key",
         feishuReadDryRun: false,
         larkVerificationToken: "verification-token"
       },

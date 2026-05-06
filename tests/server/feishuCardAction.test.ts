@@ -12,14 +12,14 @@ function flushAsyncWork(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-function signLegacyCardAction(input: {
+function signCardAction(input: {
   timestamp: string;
   nonce: string;
   body: unknown;
-  verificationToken: string;
+  encryptKey: string;
 }) {
-  return createHash("sha1")
-    .update(input.timestamp + input.nonce + input.verificationToken + JSON.stringify(input.body))
+  return createHash("sha256")
+    .update(input.timestamp + input.nonce + input.encryptKey + JSON.stringify(input.body))
     .digest("hex");
 }
 
@@ -239,7 +239,8 @@ async function createAppWithConfirmations(larkVerificationToken: string | null =
       feishuDryRun: true,
       larkCliBin: "definitely-not-real-lark",
       sqlitePath: ":memory:",
-      larkVerificationToken
+      larkVerificationToken,
+      larkEncryptKey: "encrypt-key"
     }),
     repos,
     llm: new MockLlmClient()
@@ -391,11 +392,11 @@ describe("POST /webhooks/feishu/card-action", () => {
       headers: {
         "x-lark-request-timestamp": timestamp,
         "x-lark-request-nonce": nonce,
-        "x-lark-signature": signLegacyCardAction({
+        "x-lark-signature": signCardAction({
           timestamp,
           nonce,
           body: payload,
-          verificationToken
+          encryptKey: "encrypt-key"
         })
       },
       payload
@@ -814,6 +815,7 @@ describe("POST /webhooks/feishu/card-action", () => {
         feishuDryRun: true,
         feishuCardSendDryRun: false,
         larkVerificationToken: verificationToken,
+        larkEncryptKey: "encrypt-key",
         larkCliBin: "fake-lark",
         sqlitePath: ":memory:"
       }),
@@ -846,11 +848,11 @@ describe("POST /webhooks/feishu/card-action", () => {
       headers: {
         "x-lark-request-timestamp": timestamp,
         "x-lark-request-nonce": nonce,
-        "x-lark-signature": signLegacyCardAction({
+        "x-lark-signature": signCardAction({
           timestamp,
           nonce,
           body: payload,
-          verificationToken
+          encryptKey: "encrypt-key"
         })
       },
       payload
@@ -914,6 +916,7 @@ describe("POST /webhooks/feishu/card-action", () => {
         feishuDryRun: true,
         feishuCardSendDryRun: false,
         larkVerificationToken: verificationToken,
+        larkEncryptKey: "encrypt-key",
         larkCliBin: "fake-lark",
         sqlitePath: ":memory:"
       }),
@@ -946,11 +949,11 @@ describe("POST /webhooks/feishu/card-action", () => {
       headers: {
         "x-lark-request-timestamp": timestamp,
         "x-lark-request-nonce": nonce,
-        "x-lark-signature": signLegacyCardAction({
+        "x-lark-signature": signCardAction({
           timestamp,
           nonce,
           body: payload,
-          verificationToken
+          encryptKey: "encrypt-key"
         })
       },
       payload
@@ -1017,6 +1020,7 @@ describe("POST /webhooks/feishu/card-action", () => {
         feishuDryRun: false,
         feishuCardSendDryRun: false,
         larkVerificationToken: verificationToken,
+        larkEncryptKey: "encrypt-key",
         larkCliBin: "fake-lark",
         sqlitePath: ":memory:"
       }),
@@ -1049,11 +1053,11 @@ describe("POST /webhooks/feishu/card-action", () => {
       headers: {
         "x-lark-request-timestamp": timestamp,
         "x-lark-request-nonce": nonce,
-        "x-lark-signature": signLegacyCardAction({
+        "x-lark-signature": signCardAction({
           timestamp,
           nonce,
           body: payload,
-          verificationToken
+          encryptKey: "encrypt-key"
         })
       },
       payload

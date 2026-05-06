@@ -14,6 +14,7 @@ export interface AppConfig {
   feishuTaskCreateDryRun: boolean;
   feishuCalendarCreateDryRun: boolean;
   feishuKnowledgeWriteDryRun: boolean;
+  feishuEventCardChatId: string | null;
   larkVerificationToken: string | null;
   larkCardCallbackUrlHint: string | null;
   larkEncryptKey: string | null;
@@ -36,6 +37,7 @@ export interface CardCallbackReadiness {
   ready: boolean;
   actions_enabled: boolean;
   verification_token_configured: boolean;
+  encrypt_key_configured: boolean;
   callback_url_configured: boolean;
   callback_url_public: boolean;
   callback_url_path_ok: boolean;
@@ -96,10 +98,11 @@ function looksLikePublicHttpUrl(value: string | null): {
 
 export function getCardCallbackReadiness(config: Pick<
   AppConfig,
-  "feishuCardActionsEnabled" | "larkVerificationToken" | "larkCardCallbackUrlHint"
+  "feishuCardActionsEnabled" | "larkVerificationToken" | "larkCardCallbackUrlHint" | "larkEncryptKey"
 >): CardCallbackReadiness {
   const url = looksLikePublicHttpUrl(config.larkCardCallbackUrlHint);
   const verificationTokenConfigured = Boolean(config.larkVerificationToken);
+  const encryptKeyConfigured = Boolean(config.larkEncryptKey);
   const issues: string[] = [];
 
   if (!config.feishuCardActionsEnabled) {
@@ -107,6 +110,9 @@ export function getCardCallbackReadiness(config: Pick<
   }
   if (!verificationTokenConfigured) {
     issues.push("LARK_VERIFICATION_TOKEN must be configured for card-action signature verification");
+  }
+  if (!encryptKeyConfigured) {
+    issues.push("LARK_ENCRYPT_KEY must be configured for card-action signature verification");
   }
   if (!url.configured) {
     issues.push("LARK_CARD_CALLBACK_URL_HINT must be configured");
@@ -121,11 +127,13 @@ export function getCardCallbackReadiness(config: Pick<
     ready:
       config.feishuCardActionsEnabled &&
       verificationTokenConfigured &&
+      encryptKeyConfigured &&
       url.configured &&
       url.publicUrl &&
       url.pathOk,
     actions_enabled: config.feishuCardActionsEnabled,
     verification_token_configured: verificationTokenConfigured,
+    encrypt_key_configured: encryptKeyConfigured,
     callback_url_configured: url.configured,
     callback_url_public: url.publicUrl,
     callback_url_path_ok: url.pathOk,
@@ -176,6 +184,7 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       process.env.FEISHU_KNOWLEDGE_WRITE_DRY_RUN,
       feishuDryRun
     ),
+    feishuEventCardChatId: process.env.FEISHU_EVENT_CARD_CHAT_ID || null,
     larkVerificationToken: process.env.LARK_VERIFICATION_TOKEN || null,
     larkCardCallbackUrlHint: process.env.LARK_CARD_CALLBACK_URL_HINT || null,
     larkEncryptKey: process.env.LARK_ENCRYPT_KEY || null,

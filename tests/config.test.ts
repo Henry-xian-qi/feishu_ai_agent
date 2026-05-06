@@ -127,6 +127,7 @@ describe("loadConfig", () => {
         loadConfig({
           feishuCardActionsEnabled: true,
           larkVerificationToken: "verification-token",
+          larkEncryptKey: "encrypt-key",
           larkCardCallbackUrlHint: "https://meetingatlas.example.com/webhooks/feishu/card-action"
         })
       )
@@ -134,6 +135,7 @@ describe("loadConfig", () => {
       ready: true,
       actions_enabled: true,
       verification_token_configured: true,
+      encrypt_key_configured: true,
       callback_url_configured: true,
       callback_url_public: true,
       callback_url_path_ok: true,
@@ -145,12 +147,14 @@ describe("loadConfig", () => {
         loadConfig({
           feishuCardActionsEnabled: true,
           larkVerificationToken: "",
+          larkEncryptKey: "",
           larkCardCallbackUrlHint: "http://localhost:3000/webhooks/feishu/card-action"
         })
       )
     ).toMatchObject({
       ready: false,
       verification_token_configured: false,
+      encrypt_key_configured: false,
       callback_url_configured: true,
       callback_url_public: false,
       callback_url_path_ok: true

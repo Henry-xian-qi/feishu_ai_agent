@@ -4,7 +4,7 @@ export function verifyLarkWebhookSignature(input: {
   timestamp: string;
   nonce: string;
   body: string;
-  verificationToken: string;
+  secret: string;
   signature?: string | null;
 }): boolean {
   const signature = input.signature?.trim().toLowerCase();
@@ -13,7 +13,7 @@ export function verifyLarkWebhookSignature(input: {
   }
 
   const expected = createHash("sha256")
-    .update(input.timestamp + input.nonce + input.verificationToken + input.body)
+    .update(input.timestamp + input.nonce + input.secret + input.body)
     .digest("hex");
 
   const expectedBuffer = Buffer.from(expected, "utf8");
@@ -26,6 +26,7 @@ export function verifyLarkWebhookSignature(input: {
   return timingSafeEqual(expectedBuffer, signatureBuffer);
 }
 
+// Legacy card-action signer kept for backward compatibility in tests and migration checks.
 export function verifyLarkCardActionSignature(input: {
   timestamp: string;
   nonce: string;
@@ -37,18 +38,14 @@ export function verifyLarkCardActionSignature(input: {
   if (!signature) {
     return false;
   }
-
   const expected = createHash("sha1")
     .update(input.timestamp + input.nonce + input.verificationToken + JSON.stringify(input.body))
     .digest("hex");
-
   const expectedBuffer = Buffer.from(expected, "utf8");
   const signatureBuffer = Buffer.from(signature, "utf8");
-
   if (expectedBuffer.length !== signatureBuffer.length) {
     return false;
   }
-
   return timingSafeEqual(expectedBuffer, signatureBuffer);
 }
 
