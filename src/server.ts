@@ -20,7 +20,7 @@ import { type LarkCliRunner } from "./tools/larkCli";
 import { fetchTranscript } from "./tools/larkVc";
 import { nowIso } from "./utils/dates";
 import { createId } from "./utils/id";
-import { decryptLarkPayload, verifyLarkCardActionSignature, verifyLarkWebhookSignature } from "./utils/larkSignature";
+import { decryptLarkPayload, verifyLarkWebhookSignature } from "./utils/larkSignature";
 import {
   processMeetingTextToConfirmationsWorkflow,
   processMeetingWorkflow
@@ -73,6 +73,7 @@ const FeishuRecordingReadyEventSchema = z
 
 type FeishuEventWebhookPayload = {
   challenge?: unknown;
+  token?: unknown;
   event_type?: unknown;
   header?: {
     event_type?: unknown;
@@ -112,8 +113,7 @@ function getHeaderString(request: FastifyRequest, name: string): string | null {
 function isLarkSignatureValid(input: {
   request: FastifyRequest;
   body: string;
-  verificationToken: string | null;
-  encryptKey?: string | null;
+  encryptKey: string;
 }): boolean {
   const timestamp = getHeaderString(input.request, "x-lark-request-timestamp");
   const nonce = getHeaderString(input.request, "x-lark-request-nonce");
@@ -123,26 +123,11 @@ function isLarkSignatureValid(input: {
     return false;
   }
 
-  // When Encrypt Key is configured, Feishu signs with Encrypt Key on the raw body
-  if (input.encryptKey) {
-    return verifyLarkWebhookSignature({
-      timestamp,
-      nonce,
-      body: input.body,
-      verificationToken: input.encryptKey,
-      signature
-    });
-  }
-
-  if (input.verificationToken === null) {
-    return true;
-  }
-
   return verifyLarkWebhookSignature({
     timestamp,
     nonce,
     body: input.body,
-    verificationToken: input.verificationToken,
+    secret: input.encryptKey,
     signature
   });
 }
@@ -150,9 +135,7 @@ function isLarkSignatureValid(input: {
 function isLarkCardActionSignatureValid(input: {
   request: FastifyRequest;
   rawBody: string;
-  body: unknown;
-  verificationToken: string | null;
-  encryptKey?: string | null;
+  encryptKey: string;
 }): boolean {
   const timestamp = getHeaderString(input.request, "x-lark-request-timestamp");
   const nonce = getHeaderString(input.request, "x-lark-request-nonce");
@@ -162,38 +145,11 @@ function isLarkCardActionSignatureValid(input: {
     return false;
   }
 
-  // When Encrypt Key is configured, encrypted card events use SHA-256 with Encrypt Key
-  if (input.encryptKey) {
-    return verifyLarkWebhookSignature({
-      timestamp,
-      nonce,
-      body: input.rawBody,
-      verificationToken: input.encryptKey,
-      signature
-    });
-  }
-
-  if (input.verificationToken === null) {
-    return true;
-  }
-
-  if (
-    verifyLarkWebhookSignature({
-      timestamp,
-      nonce,
-      body: input.rawBody,
-      verificationToken: input.verificationToken,
-      signature
-    })
-  ) {
-    return true;
-  }
-
-  return verifyLarkCardActionSignature({
+  return verifyLarkWebhookSignature({
     timestamp,
     nonce,
-    body: input.body,
-    verificationToken: input.verificationToken,
+    body: input.rawBody,
+    secret: input.encryptKey,
     signature
   });
 }
@@ -288,6 +244,17 @@ function getFeishuEventType(payload: FeishuEventWebhookPayload): string | null {
   }
 
   return typeof payload.header?.event_type === "string" ? payload.header.event_type : null;
+}
+
+function extractMeetingEventPayload(payload: FeishuEventWebhookPayload): Record<string, unknown> {
+  const event = asRecord(payload.event) ?? {};
+  return (
+    asRecord(event.meeting) ??
+    asRecord(event.video_meeting) ??
+    asRecord(event.video_conference) ??
+    asRecord(event.recording) ??
+    event
+  );
 }
 
 type ToastType = "info" | "success" | "error";
@@ -951,6 +918,7 @@ export function buildServer(input: {
 
   app.get("/health", async () => {
     const cardCallbackReadiness = getCardCallbackReadiness(input.config);
+    const feishuWebhookReady = Boolean(input.config.larkVerificationToken && input.config.larkEncryptKey);
     return {
       ok: true,
       service: "meeting-atlas",
@@ -960,7 +928,13 @@ export function buildServer(input: {
       card_send_dry_run: input.config.feishuCardSendDryRun,
       card_actions_enabled: input.config.feishuCardActionsEnabled,
       card_callback_ready: cardCallbackReadiness.ready,
+      feishu_webhook_ready: feishuWebhookReady,
+      feishu_webhook_encrypt_key_configured: Boolean(input.config.larkEncryptKey),
+      feishu_webhook_verification_token_configured: Boolean(input.config.larkVerificationToken),
+      feishu_event_card_chat_configured: Boolean(input.config.feishuEventCardChatId),
       card_callback_url_configured: cardCallbackReadiness.callback_url_configured,
+      card_callback_verification_token_configured: cardCallbackReadiness.verification_token_configured,
+      card_callback_encrypt_key_configured: cardCallbackReadiness.encrypt_key_configured,
       task_create_dry_run: input.config.feishuTaskCreateDryRun,
       calendar_create_dry_run: input.config.feishuCalendarCreateDryRun,
       knowledge_write_dry_run: input.config.feishuKnowledgeWriteDryRun,
@@ -1011,13 +985,21 @@ export function buildServer(input: {
         return reply.code(503).send({ error: "LARK_VERIFICATION_TOKEN not configured" });
       }
     }
+    if (!input.config.larkEncryptKey) {
+      if (allowsLocalSecurityBypass(input.config)) {
+        request.log.warn(
+          "LARK_ENCRYPT_KEY not configured; allowing event webhook request in local environment"
+        );
+      } else {
+        return reply.code(503).send({ error: "LARK_ENCRYPT_KEY not configured" });
+      }
+    }
 
     if (
       !isLarkSignatureValid({
         request,
         body: rawBody,
-        verificationToken: input.config.larkVerificationToken,
-        encryptKey: input.config.larkEncryptKey
+        encryptKey: input.config.larkEncryptKey!
       })
     ) {
       request.log.warn(
@@ -1030,12 +1012,15 @@ export function buildServer(input: {
       );
       return reply.code(401).send({ error: "Invalid Lark webhook signature" });
     }
+    if (payload.token !== input.config.larkVerificationToken) {
+      return reply.code(401).send({ error: "Invalid Lark verification token" });
+    }
 
     const eventType = getFeishuEventType(payload);
     request.log.info({ event_type: eventType }, "received feishu event webhook");
 
     if (eventType === FeishuRecordingReadyEventType || eventType === FeishuMeetingEndedEventType) {
-      const event = FeishuRecordingReadyEventSchema.parse(payload.event ?? {});
+      const event = FeishuRecordingReadyEventSchema.parse(extractMeetingEventPayload(payload));
       const organizer = event.operator_id?.open_id ?? event.host_user_id?.open_id ?? null;
       const externalMeetingId = event.meeting_id ?? event.minute_token ?? "unknown";
       const title = event.topic?.trim() || externalMeetingId;
@@ -1082,6 +1067,7 @@ export function buildServer(input: {
           repos: input.repos,
           config: input.config,
           confirmationIds: result.confirmation_requests,
+          sendToChatId: input.config.feishuEventCardChatId,
           runner: input.larkCliRunner
         });
 
@@ -1092,6 +1078,10 @@ export function buildServer(input: {
             meeting_id: result.meeting_id,
             confirmation_requests: result.confirmation_requests.length,
             card_send_results: cardSendResults.length,
+            card_send_failed: cardSendResults.filter((item) => !item.ok).length,
+            card_send_skipped: cardSendResults.length === 0,
+            card_send_dry_run: input.config.feishuCardSendDryRun,
+            event_card_chat_configured: Boolean(input.config.feishuEventCardChatId),
             transcript_preview: transcript.slice(0, 80)
           },
           "triggered meeting workflow from feishu event"
@@ -1144,14 +1134,19 @@ export function buildServer(input: {
         return reply.code(503).send({ error: "LARK_VERIFICATION_TOKEN not configured" });
       }
     }
+    if (!input.config.larkEncryptKey) {
+      if (allowsLocalSecurityBypass(input.config)) {
+        request.log.warn("LARK_ENCRYPT_KEY not configured; allowing card-action request in local environment");
+      } else {
+        return reply.code(503).send({ error: "LARK_ENCRYPT_KEY not configured" });
+      }
+    }
 
     if (
       !isLarkCardActionSignatureValid({
         request,
         rawBody: rawBody,
-        body: decrypted ? decryptedPayload : (request.body ?? {}),
-        verificationToken: input.config.larkVerificationToken,
-        encryptKey: input.config.larkEncryptKey
+        encryptKey: input.config.larkEncryptKey!
       })
     ) {
       request.log.warn(
@@ -1161,6 +1156,14 @@ export function buildServer(input: {
       return reply.code(401).send({ error: "Invalid Lark webhook signature" });
     }
 
+    const callbackToken = firstString([
+      valueAtPath(decrypted ? decryptedPayload : (request.body ?? {}), ["token"]),
+      valueAtPath(decrypted ? decryptedPayload : (request.body ?? {}), ["header", "token"]),
+      valueAtPath(decrypted ? decryptedPayload : (request.body ?? {}), ["event", "token"])
+    ]);
+    if (callbackToken !== input.config.larkVerificationToken) {
+      return reply.code(401).send({ error: "Invalid Lark verification token" });
+    }
     const parsed = extractCardCallbackPayload(decrypted ? decryptedPayload : (request.body ?? {}));
 
     if (parsed.requestId === null) {

@@ -8,10 +8,10 @@ function sign(input: {
   timestamp: string;
   nonce: string;
   body: string;
-  verificationToken: string;
+  secret: string;
 }) {
   return createHash("sha256")
-    .update(input.timestamp + input.nonce + input.verificationToken + input.body)
+    .update(input.timestamp + input.nonce + input.secret + input.body)
     .digest("hex");
 }
 
@@ -32,7 +32,7 @@ describe("verifyLarkWebhookSignature", () => {
       timestamp: "1234567890",
       nonce: "nonce-test",
       body: '{"event":{"meeting_id":"om_test"}}',
-      verificationToken: "verification-token"
+      secret: "verification-token"
     };
 
     expect(
@@ -48,7 +48,7 @@ describe("verifyLarkWebhookSignature", () => {
       timestamp: "1234567890",
       nonce: "nonce-test",
       body: '{"event":{"meeting_id":"om_test"}}',
-      verificationToken: "verification-token"
+      secret: "verification-token"
     };
 
     expect(verifyLarkWebhookSignature(input)).toBe(false);

@@ -101,7 +101,9 @@ Mode C 的定位是隔离 canary/readiness：可以证明 per-workflow 或 full 
 
 - `DEV_API_KEY` 未配置时，所有 `/dev/*` 请求返回 503。
 - `LARK_VERIFICATION_TOKEN` 未配置时，飞书 event webhook 和 card-action webhook 返回 503。
-- 配置了 verification token 后，webhook 必须通过飞书签名校验。
+- `LARK_ENCRYPT_KEY` 未配置时，飞书 event webhook 和 card-action webhook 返回 503（生产环境 fail-closed）。
+- 配置了 `LARK_ENCRYPT_KEY` 后，webhook 请求头签名按 `timestamp + nonce + encryptKey + rawBody` 的 SHA-256 校验。
+- 配置了 `LARK_VERIFICATION_TOKEN` 后，payload 内 `token` 必须匹配；该 token 不用于请求头签名。
 
 ## 真实闭环配置检查清单
 
@@ -126,7 +128,9 @@ Mode C 的定位是隔离 canary/readiness：可以证明 per-workflow 或 full 
    FEISHU_CARD_SEND_DRY_RUN=false
    FEISHU_CARD_ACTIONS_ENABLED=true
    LARK_VERIFICATION_TOKEN=<your-token>
+   LARK_ENCRYPT_KEY=<your-encrypt-key>
    LARK_CARD_CALLBACK_URL_HINT=https://your-domain/webhooks/feishu/card-action
+   FEISHU_EVENT_CARD_CHAT_ID=oc_xxx
    LARK_CLI_BIN=lark-cli
    LLM_PROVIDER=openai-compatible
    LLM_BASE_URL=...
@@ -151,6 +155,7 @@ Mode C 的定位是隔离 canary/readiness：可以证明 per-workflow 或 full 
    ```
 
 真实发送未完成 confirmation card 前，系统会检查 `FEISHU_CARD_ACTIONS_ENABLED=true`、`LARK_VERIFICATION_TOKEN` 非空、`LARK_CARD_CALLBACK_URL_HINT` 是公网 http/https URL 且以 `/webhooks/feishu/card-action` 结尾。任一条件不满足会 fail fast，不调用 lark-cli 发送可点击但会 200671 的卡片。
+推荐在会议事件回调场景额外配置 `FEISHU_EVENT_CARD_CHAT_ID=oc_xxx`，让会议事件触发的确认卡片直接发送到现场可见群聊，而不是仅发给单个主持人。
 
 真实 LLM 实验时保持 `FEISHU_DRY_RUN=true`，只切换模型提供方：
 

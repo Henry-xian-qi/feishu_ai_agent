@@ -48,6 +48,7 @@ describe("GET /health", () => {
       sqlitePath: ":memory:",
       feishuCardActionsEnabled: true,
       larkVerificationToken: "verification-token",
+      larkEncryptKey: "encrypt-key",
       larkCardCallbackUrlHint: "https://meetingatlas.example.com/webhooks/feishu/card-action"
     });
     const app = buildServer({
