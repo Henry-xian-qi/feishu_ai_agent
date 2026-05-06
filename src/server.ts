@@ -112,17 +112,28 @@ function isLarkSignatureValid(input: {
   request: FastifyRequest;
   body: string;
   verificationToken: string | null;
+  encryptKey?: string | null;
 }): boolean {
-  if (input.verificationToken === null) {
-    return true;
-  }
-
   const timestamp = getHeaderString(input.request, "x-lark-request-timestamp");
   const nonce = getHeaderString(input.request, "x-lark-request-nonce");
   const signature = getHeaderString(input.request, "x-lark-signature");
 
   if (timestamp === null || nonce === null || signature === null) {
     return false;
+  }
+
+  if (input.encryptKey) {
+    return verifyLarkWebhookSignature({
+      timestamp,
+      nonce,
+      body: input.body,
+      verificationToken: input.encryptKey,
+      signature
+    });
+  }
+
+  if (input.verificationToken === null) {
+    return true;
   }
 
   return verifyLarkWebhookSignature({
@@ -139,17 +150,28 @@ function isLarkCardActionSignatureValid(input: {
   rawBody: string;
   body: unknown;
   verificationToken: string | null;
+  encryptKey?: string | null;
 }): boolean {
-  if (input.verificationToken === null) {
-    return true;
-  }
-
   const timestamp = getHeaderString(input.request, "x-lark-request-timestamp");
   const nonce = getHeaderString(input.request, "x-lark-request-nonce");
   const signature = getHeaderString(input.request, "x-lark-signature");
 
   if (timestamp === null || nonce === null || signature === null) {
     return false;
+  }
+
+  if (input.encryptKey) {
+    return verifyLarkWebhookSignature({
+      timestamp,
+      nonce,
+      body: input.rawBody,
+      verificationToken: input.encryptKey,
+      signature
+    });
+  }
+
+  if (input.verificationToken === null) {
+    return true;
   }
 
   if (
@@ -965,7 +987,8 @@ export function buildServer(input: {
       !isLarkSignatureValid({
         request,
         body: rawBody,
-        verificationToken: input.config.larkVerificationToken
+        verificationToken: input.config.larkVerificationToken,
+        encryptKey: input.config.larkEncryptKey
       })
     ) {
       request.log.warn(
@@ -1078,7 +1101,8 @@ export function buildServer(input: {
         request,
         rawBody,
         body: request.body ?? {},
-        verificationToken: input.config.larkVerificationToken
+        verificationToken: input.config.larkVerificationToken,
+        encryptKey: input.config.larkEncryptKey
       })
     ) {
       request.log.warn(
